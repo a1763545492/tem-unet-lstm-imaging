@@ -1,0 +1,25 @@
+# ===== 项目内部材料（不上传）=====
+*.xlsx
+*.docx
+论文_*.md
+best_model_*.pth
+
+# ===== 数据与模型 =====
+data/
+models/
+output/
+*.pth
+*.npy
+
+# ===== 图件（本地保留，线上不含）=====
+figures/
+
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# ===== 系统 =====
+.DS_Store
+Thumbs.db
