@@ -18,7 +18,7 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.forward.tem_forward import TEMForward
+from src.forward.tem_forward_simpeg import TEMForwardSimPEG as TEMForward
 from src.models.attention_lstm import UNetAttentionLSTM
 from src.baselines import Occam1D
 from src.utils.metrics import rmse
@@ -57,6 +57,12 @@ def main():
     snrs = [5, 10, 15, 20, 25, 30]
     res_nn, res_oc = {s: [] for s in snrs}, {s: [] for s in snrs}
 
+    # 神经网络必须使用与训练时同一套全局 log 归一化参数
+    import json
+    with open('models/norm_params.json', 'r', encoding='utf-8') as f:
+        params = json.load(f)
+    mu, sd = params['mu'], params['sd']
+
     for s in snrs:
         for rep in range(args.repeats):
             conds = 10 ** rng.uniform(-2.5, -0.7, 3)
@@ -68,8 +74,8 @@ def main():
             r = np.nan_to_num(r, nan=0.0, posinf=0.0, neginf=0.0)
 
             # 神经网络
-            mu, sd = r.mean(), r.std()
-            x = torch.from_numpy(((r - mu) / (sd + 1e-12))
+            log_r = np.log10(np.maximum(r, 1e-30))
+            x = torch.from_numpy(((log_r - mu) / (sd + 1e-12))
                                  [None, None, :].astype(np.float32))
             with torch.no_grad():
                 out = model(x)

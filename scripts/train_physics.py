@@ -20,7 +20,7 @@ from torch.utils.data import DataLoader, TensorDataset, random_split
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.forward.tem_forward import TEMForward
+from src.forward.tem_forward_simpeg import TEMForwardSimPEG as TEMForward
 from src.models.attention_lstm import UNetAttentionLSTM
 from src.training.physics_loss import (DifferentiableTEMForward,
                                        PhysicsInformedLoss)
@@ -29,29 +29,39 @@ from src.utils.metrics import evaluate_profile
 
 def make_dataset(n_samples: int, time_gates: np.ndarray,
                  max_depth: float = 300.0, nz: int = 30, seed: int = 42):
-    """随机三层模型数据集，返回 X(归一化), Y, mu, sd"""
+    """随机三层模型数据集，返回 X(对数全局归一化), Y, MU, SD
+
+    关键修正：改用 log10 变换 + 全局统计量归一化。
+    逐样本 z-score 会抹除响应绝对幅值——而电导率的绝对值恰恰
+    编码在幅值里（σ∝幅值），归一化后网络失去最重要的物理信息。
+    """
     rng = np.random.default_rng(seed)
     fwd = TEMForward(time_gates)
     X = np.zeros((n_samples, time_gates.size), dtype=np.float32)
     Y = np.zeros((n_samples, 2, nz), dtype=np.float32)
-    MU = np.zeros(n_samples, dtype=np.float32)
-    SD = np.zeros(n_samples, dtype=np.float32)
+    raw = np.zeros((n_samples, time_gates.size), dtype=np.float32)
     with np.errstate(all='ignore'):
         for i in range(n_samples):
             conds = 10 ** rng.uniform(-2.5, -0.7, 3)
             ths = [rng.uniform(30, 120), rng.uniform(30, 120), 0.0]
             resp = fwd.layered_earth_response(list(conds), list(ths))
             resp = fwd.add_noise(resp, snr=float(rng.uniform(15, 30)))
-            resp = np.nan_to_num(resp, nan=0.0, posinf=0.0, neginf=0.0)
-            mu, sd = resp.mean(), resp.std()
-            X[i] = (resp - mu) / (sd + 1e-12)
-            MU[i], SD[i] = mu, sd
+            raw[i] = np.nan_to_num(resp, nan=0.0, posinf=0.0, neginf=0.0)
             b = np.cumsum(ths)[:2]
             d = np.arange(nz) * (max_depth / nz)
             cond_prof = np.where(d < b[0], conds[0],
                                  np.where(d < b[1], conds[1], conds[2]))
             Y[i, 0] = np.log10(cond_prof)  # 对数电导率标签（量纲均衡）
-            Y[i, 1] = ths[0] / max_depth
+            # 真实厚度剖面：第一层厚度在界面处跳变为第二层厚度
+            thick_prof = np.where(d < b[0], ths[0],
+                                  np.where(d < b[1], ths[1], 0.0))
+            Y[i, 1] = thick_prof / max_depth
+    # 对数变换压缩数量级 + 全局归一化（保留样本间相对幅值差异）
+    log_raw = np.log10(np.maximum(raw, 1e-30))
+    mu, sd = log_raw.mean(), log_raw.std()
+    X = ((log_raw - mu) / (sd + 1e-12)).astype(np.float32)
+    MU = np.full(n_samples, mu, dtype=np.float32)
+    SD = np.full(n_samples, sd, dtype=np.float32)
     return X, Y, MU, SD
 
 
@@ -124,6 +134,10 @@ def main():
 
     print('生成数据集...')
     X, Y, MU, SD = make_dataset(args.samples, time_gates, max_depth, nz)
+    import json
+    os.makedirs('models', exist_ok=True)
+    with open('models/norm_params.json', 'w', encoding='utf-8') as f:
+        json.dump({'mu': float(MU[0]), 'sd': float(SD[0])}, f, indent=2)
     ds = TensorDataset(torch.from_numpy(X).unsqueeze(1),
                        torch.from_numpy(Y),
                        torch.from_numpy(MU), torch.from_numpy(SD))

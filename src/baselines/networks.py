@@ -23,7 +23,8 @@ class UNet1D(nn.Module):
             nn.Conv1d(64, 128, 3, padding=1), nn.BatchNorm1d(128),
             nn.ReLU(inplace=True),
             nn.Conv1d(128, 128, 3, padding=1), nn.BatchNorm1d(128),
-            nn.ReLU(inplace=True), nn.MaxPool1d(2),
+            nn.ReLU(inplace=True),
+            # 移除第二次池化：30个时间道太短，两次池化(30->15->7)信息损失过大
             nn.Conv1d(128, 256, 3, padding=1), nn.BatchNorm1d(256),
             nn.ReLU(inplace=True),
         )
@@ -31,8 +32,7 @@ class UNet1D(nn.Module):
             nn.ConvTranspose1d(256, 128, 2, stride=2),
             nn.Conv1d(128, 128, 3, padding=1), nn.BatchNorm1d(128),
             nn.ReLU(inplace=True),
-            nn.ConvTranspose1d(128, 64, 2, stride=2),
-            nn.Conv1d(64, 64, 3, padding=1), nn.BatchNorm1d(64),
+            nn.Conv1d(128, 64, 3, padding=1), nn.BatchNorm1d(64),
             nn.ReLU(inplace=True),
             nn.Conv1d(64, num_classes, 1),
         )

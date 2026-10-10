@@ -84,7 +84,8 @@ class UNetAttentionLSTM(nn.Module):
             nn.Conv1d(128, 128, kernel_size=3, padding=1),
             nn.BatchNorm1d(128),
             nn.ReLU(inplace=True),
-            nn.MaxPool1d(2),
+            # 移除第二次池化：30个时间道太短，两次池化(30->15->7)信息损失过大
+            # 保留一次池化(30->15)以平衡感受野与分辨率
             
             nn.Conv1d(128, 256, kernel_size=3, padding=1),
             nn.BatchNorm1d(256),
@@ -110,8 +111,7 @@ class UNetAttentionLSTM(nn.Module):
             nn.BatchNorm1d(128),
             nn.ReLU(inplace=True),
             
-            nn.ConvTranspose1d(128, 64, kernel_size=2, stride=2),
-            nn.Conv1d(64, 64, kernel_size=3, padding=1),
+            nn.Conv1d(128, 64, kernel_size=3, padding=1),
             nn.BatchNorm1d(64),
             nn.ReLU(inplace=True),
             
