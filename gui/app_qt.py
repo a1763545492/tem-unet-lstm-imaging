@@ -76,7 +76,6 @@ class InversionWorker(QThread):
     """反演计算子线程"""
     finished_ok = pyqtSignal(np.ndarray)
     failed = pyqtSignal(str)
-
     def __init__(self, data, model, max_depth, nz, parent=None):
         super().__init__(parent)
         self.data, self.model, self.max_depth, self.nz = data, model, max_depth, nz
@@ -113,6 +112,86 @@ class InversionWorker(QThread):
             self.failed.emit(str(e))
 
 
+class TrainingWorker(QThread):
+    """模型训练子线程（实时上报 epoch 损失）"""
+    epoch_done = pyqtSignal(int, float, float)
+    finished_ok = pyqtSignal(dict)
+    failed = pyqtSignal(str)
+
+    def __init__(self, n_samples=500, epochs=10, batch_size=32, lr=1e-3,
+                 parent=None):
+        super().__init__(parent)
+        self.n_samples = n_samples
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.lr = lr
+        self._stop = False
+
+    def stop(self):
+        self._stop = True
+
+    def _callback(self, epoch, train_loss, val_loss):
+        self.epoch_done.emit(epoch, train_loss, val_loss)
+        return not self._stop  # 返回 False 时 Trainer 提前终止
+
+    def run(self):
+        try:
+            import torch
+            from torch.utils.data import DataLoader, random_split
+            from src.forward.tem_forward import TEMForward
+            from src.models.attention_lstm import UNetAttentionLSTM
+            from src.training.amp_trainer import Trainer, TEMDataset
+
+            rng = np.random.default_rng(42)
+            time_gates = np.logspace(-6, -2, 30)
+            fwd = TEMForward(time_gates)
+            max_depth, nz = 300.0, 30
+
+            # 生成演示训练集：随机三层模型 → 正演响应 + 电导率/厚度标签
+            X = np.zeros((self.n_samples, 30), dtype=np.float32)
+            Y = np.zeros((self.n_samples, 2, nz), dtype=np.float32)
+            with np.errstate(all='ignore'):
+                for i in range(self.n_samples):
+                    conds = 10 ** rng.uniform(-2.5, -0.7, 3)  # 电导率 0.003~0.2
+                    ths = [rng.uniform(30, 120), rng.uniform(30, 120), 0.0]
+                    resp = fwd.layered_earth_response(list(conds), list(ths))
+                    resp = fwd.add_noise(resp, snr=float(rng.uniform(15, 30)))
+                    # 清洗非有限值并做逐样本标准化，保证 MSE 数值稳定
+                    resp = np.nan_to_num(resp, nan=0.0, posinf=0.0, neginf=0.0)
+                    mu, sd = resp.mean(), resp.std()
+                    X[i] = (resp - mu) / (sd + 1e-12)
+                    # 标签：channel0=各深度节点电导率, channel1=归一化层厚
+                    bounds = np.cumsum(ths)[:2]
+                    cond_profile = np.where(
+                        np.arange(nz) * (max_depth / nz) < bounds[0], conds[0],
+                        np.where(np.arange(nz) * (max_depth / nz) < bounds[1],
+                                 conds[1], conds[2]))
+                    Y[i, 0] = cond_profile
+                    Y[i, 1] = ths[0] / max_depth
+
+            dataset = TEMDataset(X, Y)
+            n_val = max(1, int(0.2 * self.n_samples))
+            n_train = self.n_samples - n_val
+            train_set, val_set = random_split(dataset, [n_train, n_val])
+            train_loader = DataLoader(train_set, batch_size=self.batch_size,
+                                      shuffle=True)
+            val_loader = DataLoader(val_set, batch_size=self.batch_size)
+
+            model = UNetAttentionLSTM(input_channels=1, input_length=30,
+                                      num_classes=2)
+            trainer = Trainer(model, {'learning_rate': self.lr,
+                                      'loss': 'mse',
+                                      'optimizer': 'adam'})
+            os.makedirs('models', exist_ok=True)
+            history = trainer.train(train_loader, val_loader,
+                                    num_epochs=self.epochs,
+                                    epoch_callback=self._callback,
+                                    checkpoint_dir='models')
+            self.finished_ok.emit(history)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class TEMQtApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -124,6 +203,8 @@ class TEMQtApp(QMainWindow):
         self.result_section = None
         self.model = None
         self.worker = None
+        self.train_worker = None
+        self.train_hist = {'epoch': [], 'train': [], 'val': []}
 
         self._build_ui()
         self._build_menu()
@@ -232,6 +313,7 @@ class TEMQtApp(QMainWindow):
         self.tabs.addTab(self.canvas_sec, '二维断面')
         self.tabs.addTab(self.canvas_curve, '衰减曲线')
         self.tabs.addTab(self.canvas_3d, '三维可视化')
+        self.tabs.addTab(self._build_train_tab(), '训练监控')
         splitter.addWidget(self.tabs)
 
         splitter.setStretchFactor(0, 0)
@@ -242,6 +324,126 @@ class TEMQtApp(QMainWindow):
         self.statusBar().showMessage(text)
         if pct is not None:
             self.progress.setValue(pct)
+
+    # ---------------- 训练监控页 ----------------
+    def _build_train_tab(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+
+        # 参数栏
+        gb = QGroupBox('训练参数（演示数据集：随机三层模型正演样本）')
+        grid = QGridLayout(gb)
+        grid.addWidget(QLabel('样本数'), 0, 0)
+        self.ed_nsamples = QLineEdit('500')
+        self.ed_nsamples.setMaximumWidth(90)
+        grid.addWidget(self.ed_nsamples, 0, 1)
+        grid.addWidget(QLabel('批大小'), 0, 2)
+        self.ed_batch = QLineEdit('32')
+        self.ed_batch.setMaximumWidth(90)
+        grid.addWidget(self.ed_batch, 0, 3)
+        grid.addWidget(QLabel('学习率'), 0, 4)
+        self.ed_lr = QLineEdit('0.001')
+        self.ed_lr.setMaximumWidth(90)
+        grid.addWidget(self.ed_lr, 0, 5)
+        grid.addWidget(QLabel('轮数'), 0, 6)
+        self.ed_epochs = QLineEdit('10')
+        self.ed_epochs.setMaximumWidth(90)
+        grid.addWidget(self.ed_epochs, 0, 7)
+
+        self.btn_train = QPushButton('开始训练')
+        self.btn_train.clicked.connect(self.start_training)
+        self.btn_stop_train = QPushButton('停止')
+        self.btn_stop_train.setObjectName('secondary')
+        self.btn_stop_train.setEnabled(False)
+        self.btn_stop_train.clicked.connect(self.stop_training)
+        grid.addWidget(self.btn_train, 0, 8)
+        grid.addWidget(self.btn_stop_train, 0, 9)
+        grid.setColumnStretch(10, 1)
+        v.addWidget(gb)
+
+        self.lbl_train = QLabel('未开始训练（训练在子线程执行，可随时停止；最优模型自动保存到 models/）')
+        self.lbl_train.setStyleSheet('color: #636e72; padding: 2px;')
+        v.addWidget(self.lbl_train)
+
+        self.canvas_loss = MplCanvas()
+        v.addWidget(self.canvas_loss)
+        return w
+
+    def start_training(self):
+        if self.train_worker is not None and self.train_worker.isRunning():
+            QMessageBox.warning(self, '提示', '训练正在进行中')
+            return
+        try:
+            n_samples = int(self.ed_nsamples.text())
+            epochs = int(self.ed_epochs.text())
+            batch = int(self.ed_batch.text())
+            lr = float(self.ed_lr.text())
+        except ValueError:
+            QMessageBox.warning(self, '提示', '请检查训练参数格式')
+            return
+
+        self.train_hist = {'epoch': [], 'train': [], 'val': []}
+        self._redraw_loss()
+        self.btn_train.setEnabled(False)
+        self.btn_stop_train.setEnabled(True)
+        self._status('训练数据生成与训练中...', 50)
+
+        self.train_worker = TrainingWorker(n_samples, epochs, batch, lr)
+        self.train_worker.epoch_done.connect(self._on_train_epoch)
+        self.train_worker.finished_ok.connect(self._on_train_done)
+        self.train_worker.failed.connect(self._on_train_fail)
+        self.train_worker.start()
+
+    def stop_training(self):
+        if self.train_worker is not None:
+            self.train_worker.stop()
+            self.lbl_train.setText('正在停止（当前 epoch 完成后终止）...')
+
+    def _on_train_epoch(self, epoch, train_loss, val_loss):
+        h = self.train_hist
+        h['epoch'].append(epoch)
+        h['train'].append(train_loss)
+        h['val'].append(val_loss)
+        best = min(h['val'])
+        self.lbl_train.setText(
+            f'Epoch {epoch} | train_loss={train_loss:.6f} | '
+            f'val_loss={val_loss:.6f} | 最优 val_loss={best:.6f}')
+        self._redraw_loss()
+
+    def _redraw_loss(self):
+        fig = self.canvas_loss.fig
+        fig.clear()
+        ax = fig.add_subplot(111)
+        h = self.train_hist
+        if h['epoch']:
+            ax.semilogy(h['epoch'], h['train'], 'b-o', markersize=4,
+                        label='训练损失')
+            ax.semilogy(h['epoch'], h['val'], 'r-s', markersize=4,
+                        label='验证损失')
+            ax.legend()
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('MSE 损失（对数坐标）')
+        ax.set_title('训练监控：损失曲线')
+        ax.grid(True, which='both', alpha=0.3)
+        fig.tight_layout()
+        self.canvas_loss.draw()
+
+    def _on_train_done(self, history):
+        self.btn_train.setEnabled(True)
+        self.btn_stop_train.setEnabled(False)
+        n = len(history['train_loss'])
+        if n:
+            self._status(f'训练完成（{n} epochs），最优模型已保存至 models/', 100)
+            self.lbl_train.setText(
+                self.lbl_train.text() + ' —— 训练结束')
+        else:
+            self._status('训练未产生有效 epoch', 0)
+
+    def _on_train_fail(self, msg):
+        self.btn_train.setEnabled(True)
+        self.btn_stop_train.setEnabled(False)
+        QMessageBox.critical(self, '训练失败', msg)
+        self._status('训练失败', 0)
 
     # ---------------- 数据 ----------------
     def make_demo(self):

@@ -6,6 +6,7 @@ from torch.cuda.amp import autocast, GradScaler
 from typing import Dict, Tuple, Optional
 from tqdm import tqdm
 import numpy as np
+import os
 
 
 class TEMDataset(Dataset):
@@ -179,41 +180,53 @@ class Trainer:
         else:
             return None
 
-    def train(self, train_loader: DataLoader, val_loader: DataLoader, 
-              num_epochs: int = 100) -> Dict:
+    def train(self, train_loader: DataLoader, val_loader: DataLoader,
+              num_epochs: int = 100, epoch_callback=None,
+              checkpoint_dir: str = '.') -> Dict:
+        """训练主循环。
+
+        Args:
+            epoch_callback: 可选回调 fn(epoch, train_loss, val_loss)，
+                            返回 False 时提前终止（供 GUI 训练监控/停止按钮使用）。
+            checkpoint_dir: 最优模型 checkpoint 保存目录。
+        """
         history = {
             'train_loss': [],
             'val_loss': []
         }
-        
+
         for epoch in range(num_epochs):
             print(f"\nEpoch {epoch + 1}/{num_epochs}")
-            
+
             train_loss = self.amp_engine.train_epoch(train_loader, self.optimizer, self.loss_fn)
             val_loss = self.amp_engine.validate_epoch(val_loader, self.loss_fn)
-            
+
             history['train_loss'].append(train_loss)
             history['val_loss'].append(val_loss)
-            
+
             print(f"Train Loss: {train_loss:.6f} | Val Loss: {val_loss:.6f}")
-            
+
             if self.scheduler is not None:
                 if isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
                     self.scheduler.step(val_loss)
                 else:
                     self.scheduler.step()
-            
+
             if val_loss < self.best_val_loss:
                 self.best_val_loss = val_loss
                 self.early_stopping_counter = 0
-                self.save_checkpoint(f'best_model_epoch_{epoch+1}.pth')
+                self.save_checkpoint(os.path.join(checkpoint_dir, f'best_model_epoch_{epoch+1}.pth'))
             else:
                 self.early_stopping_counter += 1
-                
+
+            if epoch_callback is not None and epoch_callback(epoch + 1, train_loss, val_loss) is False:
+                print("Training stopped by callback")
+                break
+
             if self.config.get('early_stopping', False) and self.early_stopping_counter >= 10:
                 print("Early stopping triggered")
                 break
-        
+
         return history
 
     def save_checkpoint(self, path: str):
