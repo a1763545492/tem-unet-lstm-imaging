@@ -4,10 +4,10 @@
 论文_*.md
 best_model_*.pth
 
-# ===== 数据与模型 =====
-data/
-models/
-output/
+# ===== 数据与模型（仅根目录，勿屏蔽 src/models 等源码目录）=====
+/data/
+/models/
+/output/
 *.pth
 *.npy
 
