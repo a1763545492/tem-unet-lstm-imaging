@@ -65,41 +65,60 @@ class PhysicsInformedLoss(nn.Module):
     - input_stats: (mu, sd) 各 (B,)，用于把输入反归一化回物理幅值
     """
 
-    def __init__(self, forward_op: DifferentiableTEMForward,
+    def __init__(self, forward_op,
                  lambda_data: float = 1.0, lambda_physics: float = 0.3,
-                 lambda_smooth: float = 0.05, adaptive: bool = True):
+                 lambda_smooth: float = 0.05, adaptive: bool = True,
+                 physics_batch: int = 8):
         super().__init__()
         self.fwd = forward_op
         self.l1, self.l2, self.l3 = lambda_data, lambda_physics, lambda_smooth
         self.adaptive = adaptive
+        # 严格 DLF 正演的复数 rTE 递推反向传播开销大，
+        # 每个训练 batch 仅子采样若干样本参与物理项，降低训练耗时
+        self.physics_batch = physics_batch
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor,
                 input_data: torch.Tensor,
-                input_stats: tuple) -> tuple:
+                input_stats: tuple,
+                apply_physics: bool = True,
+                physics_scale: float = 1.0) -> tuple:
         l_data = F.mse_loss(pred, target)
 
         # 预测电导率：网络输出为 log10(σ)，指数还原保正
         log_sigma = torch.clamp(pred[:, 0, :], -6.0, 1.0)
-        sigma_pred = 10.0 ** log_sigma                           # (B,L)
-        resp_pred = self.fwd(sigma_pred)                         # (B,T)
 
-        # 输入响应反归一化到物理幅值
+        # 输入响应反归一化到 log10(物理幅值)
         mu, sd = input_stats                                     # (B,)
-        d_obs = input_data.squeeze(1) * sd.unsqueeze(1) + mu.unsqueeze(1)
 
-        # 物理损失在对数幅值空间计算（响应跨数量级，线性 MSE 不稳定）
-        l_physics = F.mse_loss(torch.log10(resp_pred + 1e-12),
-                               torch.log10(torch.abs(d_obs) + 1e-12))
-
-        # 电导率剖面平滑正则（对数空间）
+        # 电导率剖面平滑正则（对数空间，全样本，计算廉价始终保留）
         l_smooth = torch.mean((log_sigma[:, 1:] - log_sigma[:, :-1]) ** 2)
 
+        if apply_physics:
+            # 物理项子采样（确定性取前 N 个，shuffle 的 DataLoader 已保证多样性）
+            nb = self.physics_batch or pred.shape[0]
+            nb = min(nb, pred.shape[0])
+            sigma_pred = 10.0 ** log_sigma[:nb]              # (nb,L)
+            resp_pred = self.fwd(sigma_pred)                 # (nb,T)
+            d_obs = (input_data.squeeze(1)[:nb] * sd[:nb].unsqueeze(1)
+                     + mu[:nb].unsqueeze(1))
+            # 物理损失在对数幅值空间（响应跨数量级，线性 MSE 不稳定）
+            l_physics = F.mse_loss(torch.log10(resp_pred + 1e-12), d_obs)
+        else:
+            # 间隔步跳过昂贵的 DLF 正演反向传播
+            l_physics = torch.zeros((), device=pred.device, dtype=pred.dtype)
+
         # 自适应权重：物理/平滑项保持在数据项的 λ 比例，防止量纲失衡
+        if not apply_physics:
+            w2 = 0.0
+        elif self.adaptive:
+            w2 = (self.l2 * physics_scale
+                  * l_data.detach() / (l_physics.detach() + 1e-12))
+        else:
+            w2 = self.l2 * physics_scale
         if self.adaptive:
-            w2 = self.l2 * l_data.detach() / (l_physics.detach() + 1e-12)
             w3 = self.l3 * l_data.detach() / (l_smooth.detach() + 1e-12)
         else:
-            w2, w3 = self.l2, self.l3
+            w3 = self.l3
 
         total = l_data + w2 * l_physics + w3 * l_smooth
         return total, {'data': float(l_data.detach()),

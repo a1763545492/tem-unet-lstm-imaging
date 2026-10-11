@@ -68,8 +68,14 @@ def main():
             conds = 10 ** rng.uniform(-2.5, -0.7, 3)
             ths = [rng.uniform(30, 120), rng.uniform(30, 120), 0.0]
             t_log = true_logsigma(conds, ths, max_depth, nz)
+            # 与训练协议一致：用 30 网格阶梯剖面正演
+            b = np.cumsum(ths)[:2]
+            d = np.arange(nz) * (max_depth / nz)
+            prof = np.where(d < b[0], conds[0],
+                            np.where(d < b[1], conds[1], conds[2]))
+            grid_thicks = np.r_[np.full(nz - 1, max_depth / nz), 0.0].tolist()
             with np.errstate(all='ignore'):
-                r = fwd.layered_earth_response(list(conds), list(ths))
+                r = fwd.layered_earth_response(prof.tolist(), grid_thicks)
                 r = fwd.add_noise(r, snr=float(s))
             r = np.nan_to_num(r, nan=0.0, posinf=0.0, neginf=0.0)
 

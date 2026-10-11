@@ -15,15 +15,16 @@ import sys
 
 import numpy as np
 import torch
+torch.set_num_threads(min(4, os.cpu_count() or 4))
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset, random_split
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.forward.tem_forward_simpeg import TEMForwardSimPEG as TEMForward
+from src.forward.tem_forward_torch import TorchDLFTEMForward
 from src.models.attention_lstm import UNetAttentionLSTM
-from src.training.physics_loss import (DifferentiableTEMForward,
-                                       PhysicsInformedLoss)
+from src.training.physics_loss import PhysicsInformedLoss
 from src.utils.metrics import evaluate_profile
 
 
@@ -37,6 +38,10 @@ def make_dataset(n_samples: int, time_gates: np.ndarray,
     """
     rng = np.random.default_rng(seed)
     fwd = TEMForward(time_gates)
+    dz = max_depth / nz
+    # 数据正演统一使用 30 网格阶梯剖面（与标签、物理损失算子完全自洽；
+    # 若用连续界面三层模型正演，10m 网格离散化会带来 10%-33% 系统偏差）
+    grid_thicks = np.r_[np.full(nz - 1, dz), 0.0].tolist()
     X = np.zeros((n_samples, time_gates.size), dtype=np.float32)
     Y = np.zeros((n_samples, 2, nz), dtype=np.float32)
     raw = np.zeros((n_samples, time_gates.size), dtype=np.float32)
@@ -44,13 +49,14 @@ def make_dataset(n_samples: int, time_gates: np.ndarray,
         for i in range(n_samples):
             conds = 10 ** rng.uniform(-2.5, -0.7, 3)
             ths = [rng.uniform(30, 120), rng.uniform(30, 120), 0.0]
-            resp = fwd.layered_earth_response(list(conds), list(ths))
-            resp = fwd.add_noise(resp, snr=float(rng.uniform(15, 30)))
-            raw[i] = np.nan_to_num(resp, nan=0.0, posinf=0.0, neginf=0.0)
             b = np.cumsum(ths)[:2]
-            d = np.arange(nz) * (max_depth / nz)
+            d = np.arange(nz) * dz
             cond_prof = np.where(d < b[0], conds[0],
                                  np.where(d < b[1], conds[1], conds[2]))
+            resp = fwd.layered_earth_response(cond_prof.tolist(),
+                                              grid_thicks)
+            resp = fwd.add_noise(resp, snr=float(rng.uniform(15, 30)))
+            raw[i] = np.nan_to_num(resp, nan=0.0, posinf=0.0, neginf=0.0)
             Y[i, 0] = np.log10(cond_prof)  # 对数电导率标签（量纲均衡）
             # 真实厚度剖面：第一层厚度在界面处跳变为第二层厚度
             thick_prof = np.where(d < b[0], ths[0],
@@ -66,21 +72,35 @@ def make_dataset(n_samples: int, time_gates: np.ndarray,
 
 
 def train_one(model, loaders, epochs, loss_fn, lr, use_physics: bool,
-              device='cpu'):
+              physics_every: int = 1, device='cpu', ckpt_path: str = None):
     model = model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     train_loader, val_loader = loaders
     best = np.inf
-    for ep in range(1, epochs + 1):
+    best_state = None
+    start_ep = 1
+    # 断点续训：逐轮保存检查点（保存 val 最低轮的权重），可从断点恢复
+    if ckpt_path and os.path.exists(ckpt_path):
+        ck = torch.load(ckpt_path, map_location=device)
+        model.load_state_dict(ck['model'])
+        opt.load_state_dict(ck['opt'])
+        start_ep, best = ck['epoch'] + 1, ck['best']
+        best_state = {k: v.clone() for k, v in ck['model'].items()}
+        print(f'  从检查点续训：第 {start_ep} 轮起')
+    for ep in range(start_ep, epochs + 1):
         model.train()
         tr = 0.0
-        for x, y, mu, sd in train_loader:
+        for bi, (x, y, mu, sd) in enumerate(train_loader):
             x, y, mu, sd = (t.to(device) for t in (x, y, mu, sd))
             opt.zero_grad()
             out = model(x)
             pred = out[0] if isinstance(out, tuple) else out
             if use_physics:
-                loss, parts = loss_fn(pred, y, x, (mu, sd))
+                do_phys = (bi % physics_every) == 0
+                loss, parts = loss_fn(
+                    pred, y, x, (mu, sd),
+                    apply_physics=do_phys,
+                    physics_scale=float(physics_every))
             else:
                 loss = F.mse_loss(pred, y)
             loss.backward()
@@ -97,7 +117,18 @@ def train_one(model, loaders, epochs, loss_fn, lr, use_physics: bool,
         n_tr = len(train_loader.dataset)
         n_va = len(val_loader.dataset)
         print(f'  epoch {ep:3d}: train={tr/n_tr:.6f}  val_mse={va/n_va:.6f}')
-        best = min(best, va / n_va)
+        va_avg = va / n_va
+        if va_avg < best:
+            best = va_avg
+            # 记录 val 最低权重（等价早停，防止后期过拟合影响评估）
+            best_state = {k: v.detach().clone()
+                          for k, v in model.state_dict().items()}
+            if ckpt_path:
+                torch.save({'model': best_state,
+                            'opt': opt.state_dict(),
+                            'epoch': ep, 'best': best}, ckpt_path)
+    if best_state is not None:
+        model.load_state_dict(best_state)
     return model, best
 
 
@@ -126,6 +157,13 @@ def main():
     ap.add_argument('--lr', type=float, default=1e-3)
     ap.add_argument('--lambda-physics', type=float, default=0.3)
     ap.add_argument('--lambda-smooth', type=float, default=0.05)
+    ap.add_argument('--physics-batch', type=int, default=4,
+                    help='物理项每次子采样样本数')
+    ap.add_argument('--physics-every', type=int, default=2,
+                    help='每N个batch计算一次物理项（幅度补偿保持期望贡献）')
+    ap.add_argument('--groups', type=str, default='AB',
+                    choices=['AB', 'A', 'B'],
+                    help='运行组别（A=纯MSE基线，B=物理约束）')
     args = ap.parse_args()
 
     time_gates = np.logspace(-6, -2, 30)
@@ -148,26 +186,43 @@ def main():
                DataLoader(val_set, batch_size=args.batch))
     val_tensors = TensorDataset(*[t for t in ds[val_set.indices]])
 
-    fwd_op = DifferentiableTEMForward(time_gates, max_depth / nz)
+    # 严格可微正演：与数据生成同源的 SimPEG DLF（key_101 Hankel + key_81 余弦）
+    layer_thicks = np.full(nz - 1, max_depth / nz)
+    fwd_op = TorchDLFTEMForward(time_gates, layer_thicks,
+                                loop_radius=10.0, freq_chunk=64)
     pi_loss = PhysicsInformedLoss(fwd_op, lambda_physics=args.lambda_physics,
-                                  lambda_smooth=args.lambda_smooth)
+                                  lambda_smooth=args.lambda_smooth,
+                                  physics_batch=args.physics_batch)
 
     results = {}
     os.makedirs('models', exist_ok=True)
-    for tag, use_physics, path in [('A组-纯MSE', False,
-                                    'models/plain_mse_model.pth'),
-                                   ('B组-物理约束', True,
-                                    'models/physics_model.pth')]:
-        print(f'\n=== {tag} ===')
-        torch.manual_seed(0)
+    groups = [('A', 'A组-纯MSE', False, 'models/plain_mse_model.pth',
+               'models/ckpt_A.pt'),
+              ('B', 'B组-物理约束', True, 'models/physics_model.pth',
+               'models/ckpt_B.pt')]
+    for key, tag, use_physics, path, ckpt in groups:
+        if key not in args.groups.upper() and not os.path.exists(path):
+            continue
         model = UNetAttentionLSTM(input_channels=1, input_length=30,
                                   num_classes=2)
-        model, best = train_one(model, loaders, args.epochs, pi_loss,
-                                args.lr, use_physics)
-        torch.save(model.state_dict(), path)
+        # 完成判定：最终权重存在且无未完成检查点 → 直接加载评估
+        finished = os.path.exists(path) and not os.path.exists(ckpt)
+        if key in args.groups.upper() and not finished:
+            print(f'\n=== {tag} ===')
+            torch.manual_seed(0)
+            model, best = train_one(model, loaders, args.epochs, pi_loss,
+                                    args.lr, use_physics,
+                                    physics_every=args.physics_every,
+                                    ckpt_path=ckpt)
+            torch.save(model.state_dict(), path)
+            if os.path.exists(ckpt):
+                os.remove(ckpt)
+        else:
+            model.load_state_dict(torch.load(path, map_location='cpu'))
+            print(f'\n=== {tag}（加载已完成权重评估） ===')
         metrics = evaluate(model, val_tensors, depth_grid)
         results[tag] = metrics
-        print(f'  已保存 {path}')
+        print(f'  模型权重: {path}')
 
     print('\n===== 验证集定量对比 =====')
     keys = ['RMSE', 'MAE', 'R2', '界面深度误差(m)', '异常定位偏差(m)', 'SSIM']
