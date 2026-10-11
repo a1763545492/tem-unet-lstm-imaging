@@ -134,17 +134,18 @@ $$L_{\mathrm{phys}} = \mathrm{MSE}\!\left(\log_{10}\!\left(F(10^{\hat{\sigma}}) 
 - 区间标定：MC Dropout 原生 90% 区间实测覆盖率仅 7.3%（严重欠覆盖）；线性方差标定（s=7.23）后提升至 44.7%，仍未达理想——说明 dropout 方差与真实误差相关性有限（仅认知不确定性、不含测量噪声）。讨论改进方向：深度集成、异方差输出头、conformal prediction。
 - 结论表述建议：钻孔验证章节以"界面与分层一致性"为主要证据，区间标定作为诚实的局限性讨论。
 
-### 3.5 计算效率（实测，CPU 4 线程，单测点）
+### 3.5 计算效率（实测，CPU 4 线程，单测点，20 次平均）
 
 | 方法 | 单测点耗时 | 说明 |
 |---|---|---|
 | Bostick 换算 | 0.24 ms | 无迭代，分辨率低 |
-| OCCAM-1D（12 层，max_iter=4） | 10 ms | 本项目实现 |
 | 本文模型单次前向 | **1.93 ms** | 较 OCCAM 快约 5 倍 |
-| 本文模型 + MC Dropout（T=50） | 112 ms | 附加不确定性量化的代价，仍可接受 |
+| OCCAM-1D（12 层，max_iter=4） | 10.0 ms | 本项目实现 |
+| 本文模型 + MC Dropout（T=50） | 100.2 ms | 附加不确定性量化的代价，仍可接受 |
 
-> ⚠ 图件核对结论：`fig8_efficiency_comparison.png` 中的示意耗时（如 OCCAM 45 s）为早期占位数据，与实测不符，且"钻孔吻合度"一列无实测依据。该图属核心图件（暂不覆盖），**终稿前需按本表实测数据重绘**（需作者确认后执行）。
-> 演示剖面规模换算：50 测点全断面单次反演约 0.1 s（批量），MC 50 次约 5.6 s——满足剖面级快速解释需求。
+图：`fig8_efficiency_comparison_v20261011225127.png`（已按实测重绘：(a) 各方法耗时对数轴对比；(b) MC Dropout 开销随前向次数 T 严格线性 ≈2 ms/次，不确定性量化开销可预测）。原 `fig8_efficiency_comparison.png` 为示意数据版本，保留存档。
+
+> 演示剖面规模换算：50 测点全断面单次反演约 0.1 s（批量），MC 50 次约 5 s——满足剖面级快速解释需求。
 
 ---
 
@@ -199,14 +200,14 @@ python scripts/borehole_validation.py --holes 100 --passes 30
 | fig5 | 域自适应 | 4.1 |
 | fig6 | 反演断面对比 | 3.1 |
 | fig7 | 地形校正 | 4.1 |
-| fig8 | 效率对比 | 3.5 ⚠ 示意数据失实，需按实测重绘 |
+| fig8 | 效率对比 | 3.5（已按实测重绘：fig8_efficiency_comparison_v20261011225127.png；原版示意数据存档） |
 | fig9 | Grad-CAM 可解释性 | 2.2/讨论 |
 | fig10 | 三维电阻率体渲染 | 4.2 展望 |
 | fig_noise_robustness | RMSE-SNR 曲线 | 3.1 |
 | fig_uncertainty | MC Dropout 均值断面+置信度 | 2.4（2026-10-11 新协议版） |
 | fig_borehole_validation | 钻孔验证三联图 | 3.4 |
 
-> 注：fig1~fig10 为论文核心图件（FigureManager 已注册保护，禁止覆盖）；fig_noise_robustness 与 fig_uncertainty 均已按当前协议重生成；fig8 数据失实待重绘。
+> 注：fig1~fig10 为论文核心图件（FigureManager 已注册保护）；fig8 已按实测重绘为版本化新文件；fig_noise_robustness 与 fig_uncertainty 均已按当前协议重生成。
 
 ## 附录 C：暂定参考文献（均需逐条核实后再引用）
 
@@ -228,7 +229,7 @@ python scripts/borehole_validation.py --holes 100 --passes 30
 - [x] 文献综述与引言成文（1.1/1.2，文献条目已标注[待核对]，需逐条人工核实）
 - [ ] 参考文献列表规范化（GB/T 7714 或目标期刊格式）并核实
 - [x] uncertainty_demo.py 同步新协议后重生成 fig_uncertainty（演示模型改为浅部高导异常）
-- [x] fig8 效率数据核对与填表（实测完成；图件重绘待作者确认）
+- [x] fig8 效率数据核对与填表（实测完成，并已按实测重绘版本化新图）
 - [x] 方法章 2.1–2.3 成文（问题形式化/网络结构/物理约束损失，公式编号排版待迁移至目标模板）
 - [x] 摘要与结论定稿（v0.2；终稿视目标期刊篇幅润色）
 - [ ] 真实钻孔/野外数据章节（资料到位后）

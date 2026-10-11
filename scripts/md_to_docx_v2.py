@@ -139,7 +139,7 @@ def format_docx_journal_style(docx_file, figures_dir):
         'fig5_domain_adaptation.png': '图5  域自适应效果对比',
         'fig6_inversion_comparison.png': '图6  反演断面对比',
         'fig7_terrain_correction.png': '图7  地形校正效果对比',
-        'fig8_efficiency_comparison.png': '图8  计算效率与成像精度对比（示意数据，待按实测更新）',
+        'fig8_efficiency_comparison_v20261011225127.png': '图8  计算效率与不确定性量化开销（实测）',
         'fig9_gradcam_interpretability.png': '图9  Grad-CAM可解释性分析',
         'fig10_3d_resistivity_volume.png': '图10  三维电阻率体渲染',
         'fig_noise_robustness.png': '图11  抗噪性能对比（RMSE-SNR，NN vs OCCAM-1D）',
