@@ -63,19 +63,19 @@ TEM 响应与地下电性分布之间呈强非线性关系，经典一维反演�
 
 总损失为：
 
-  L = L_data + w2·L_physics + w3·L_smooth　　（1）
+$$L = L_{\mathrm{data}} + w_2\,L_{\mathrm{phys}} + w_3\,L_{\mathrm{smooth}} \qquad (1)$$
 
 **数据项**：L_data = MSE(ŷ, y)，双通道联合。
 
 **物理项**（式 2）在对数幅值空间度量"预测剖面正演响应"与"观测响应"的一致性（响应跨 6 个数量级，线性空间 MSE 失稳）：
 
-  L_physics = MSE( log10( F(10^(logσ̂)) + ε ), d_obs )　　（2）
+$$L_{\mathrm{phys}} = \mathrm{MSE}\!\left(\log_{10}\!\left(F(10^{\hat{\sigma}}) + \epsilon\right),\, d_{\mathrm{obs}}\right) \qquad (2)$$
 
 其中 F 为可微一维 TEM 正演算子，与数据生成所用 SimPEG 数字滤波正演严格同源，由三步构成：① 频率—波数域 rTE 反射系数递推——磁导率统一取 μ0 时层阻抗表达式公因子约去，按 u_k=√(λ²+iωμ0σ_k)、自底向上递推 z_{k}=u_k·(z_{k+1}+u_k·tanh(u_k·t_k))/(u_k+z_{k+1}·tanh(u_k·t_k))，rTE=(λ−z_1)/(λ+z_1)（λ 为空间波数，t_k 为层厚）；② 101 点 J1 Hankel 数字滤波（Key_101_2009 系数）合成频率域感应电压；③ 81 点余弦变换投影矩阵将频率域响应映射为 30 道时间域 dB/dt。全流程仅由张量基本运算构成，可反向传播。
 
 **与 SimPEG 一致性验证**：半空间、三层模型与随机模型最大相对误差 <1e-7，梯度与有限差分吻合至 1e-6 量级（验证脚本见附录 A）。
 
-**自适应权重**（式 3）：w2 = λ2·L_data/|L_physics|，使物理项始终以数据项 λ2 倍的比例参与总损失，避免量纲失衡与人工试凑；平滑项 L_smooth = mean[(logσ̂_{j+1}−logσ̂_j)²] 同法取 w3。本文取 λ2=0.3、λ3=0.05。
+**自适应权重**（式 3）：$$w_2 = \lambda_2\,L_{\mathrm{data}}\,/\,|L_{\mathrm{phys}}| \qquad (3)$$ 使物理项始终以数据项 λ2 倍的比例参与总损失，避免量纲失衡与人工试凑；平滑项 $L_{\mathrm{smooth}} = \mathrm{mean}\!\left[(\hat{\sigma}_{j+1}-\hat{\sigma}_j)^2\right]$ 同法取 w3。本文取 λ2=0.3、λ3=0.05。
 
 **稀疏计算策略**：复数递推的自动微分开销大（8 样本正演+反传约 3 s）。训练时每个 batch 仅取前 4 个样本计算物理项、每 2 个 batch 计算一次并对自适应权重作 ×2 幅度补偿，物理项期望贡献不变而单轮耗时由 56 s 降至 22 s。
 
@@ -83,7 +83,7 @@ TEM 响应与地下电性分布之间呈强非线性关系，经典一维反演�
 
 ### 2.4 MC Dropout 不确定性量化（创新点 B）
 - 推理阶段保持 Dropout 激活，T=50 次随机前向，取均值/逐节点标准差。
-- 图：`fig_uncertainty_v20261011223317.png`（均值断面 + 置信度图；旧版 `fig_uncertainty.png` 基于过期协议，仅存档）。
+- 图：`fig_uncertainty.png`（2026-10-11 新协议版：均值断面 + 置信度图）。
 - 演示剖面（50 测点，400–600 m 段为浅部高导异常，第 1 层电导率 5 倍异常）：异常清晰恢复——异常区第 1 层反演 log10σ = −1.34（真值 −1.30），背景 −1.89（真值 −2.00）。
 - std 语义的诚实表述：MC Dropout 标准差刻画的是模型预测分散度（认知不确定性近似），本文实测其与真实误差的相关性有限（弱特征背景区 std 反而更大：0.037 vs 异常区 0.020），故章节 3.4 进一步以标定检验定量评估其置信区间有效性。
 
@@ -203,10 +203,10 @@ python scripts/borehole_validation.py --holes 100 --passes 30
 | fig9 | Grad-CAM 可解释性 | 2.2/讨论 |
 | fig10 | 三维电阻率体渲染 | 4.2 展望 |
 | fig_noise_robustness | RMSE-SNR 曲线 | 3.1 |
-| fig_uncertainty | MC Dropout 均值断面+置信度 | 2.4（新版 fig_uncertainty_v20261011223317.png；旧版仅存档） |
+| fig_uncertainty | MC Dropout 均值断面+置信度 | 2.4（2026-10-11 新协议版） |
 | fig_borehole_validation | 钻孔验证三联图 | 3.4 |
 
-> 注：fig1~fig10 为论文核心图件（FigureManager 已注册保护，禁止覆盖）；fig_noise_robustness 已按当前协议重生成；fig_uncertainty 新版 fig_uncertainty_v20261011223317.png 已按当前协议重生成（旧版仅存档）；fig8 数据失实待重绘。
+> 注：fig1~fig10 为论文核心图件（FigureManager 已注册保护，禁止覆盖）；fig_noise_robustness 与 fig_uncertainty 均已按当前协议重生成；fig8 数据失实待重绘。
 
 ## 附录 C：暂定参考文献（均需逐条核实后再引用）
 

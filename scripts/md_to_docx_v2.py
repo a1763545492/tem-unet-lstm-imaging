@@ -132,17 +132,24 @@ def format_docx_journal_style(docx_file, figures_dir):
     run.element.rPr.rFonts.set(qn('w:eastAsia'), '黑体')
     
     figure_captions = {
-        'fig1_network_structure.png': '图1  U-Net与LSTM融合网络结构图',
+        'fig1_network_structure.png': '图1  双分支反演网络总体结构（UNet1D + BiLSTM-自注意力）',
         'fig2_attention_mechanism.png': '图2  多头自注意力机制示意图',
         'fig3_tem_decay_curves.png': '图3  TEM衰减曲线与合成数据示例',
-        'fig4_training_loss.png': '图4  模型四轮迭代训练Loss收敛曲线',
-        'fig5_domain_adaptation.png': '图5  CycleGAN域自适应前后成像效果对比',
-        'fig6_inversion_comparison.png': '图6  本文方法与BOSTICK反演结果对比',
-        'fig7_terrain_correction.png': '图7  有限元地形校正效果对比',
-        'fig8_efficiency_comparison.png': '图8  计算效率与成像精度对比',
+        'fig4_training_loss.png': '图4  训练损失收敛曲线（A组纯MSE vs B组物理约束）',
+        'fig5_domain_adaptation.png': '图5  域自适应效果对比',
+        'fig6_inversion_comparison.png': '图6  反演断面对比',
+        'fig7_terrain_correction.png': '图7  地形校正效果对比',
+        'fig8_efficiency_comparison.png': '图8  计算效率与成像精度对比（示意数据，待按实测更新）',
+        'fig9_gradcam_interpretability.png': '图9  Grad-CAM可解释性分析',
+        'fig10_3d_resistivity_volume.png': '图10  三维电阻率体渲染',
+        'fig_noise_robustness.png': '图11  抗噪性能对比（RMSE-SNR，NN vs OCCAM-1D）',
+        'fig_uncertainty.png': '图12  MC Dropout不确定性断面（均值+逐节点标准差，2026-10-11新协议版）',
+        'fig_borehole_validation.png': '图13  合成钻孔验证三联图（界面误差/分层一致性/区间标定）',
     }
-    
-    figure_files = sorted([f for f in os.listdir(figures_dir) if f.endswith('.png')])
+
+    # 只嵌入白名单图件（排除历史存档与报告图）
+    figure_files = [f for f in figure_captions
+                    if os.path.exists(os.path.join(figures_dir, f))]
     
     for fig_file in figure_files:
         fig_path = os.path.join(figures_dir, fig_file)
@@ -195,9 +202,16 @@ def verify_formulas(docx_file):
 
 
 def main():
-    md_file = '论文_基于U-Net与LSTM的瞬变电磁数据快速成像方法研究.md'
-    figures_dir = 'figures'
-    docx_file = '论文_基于U-Net与LSTM的瞬变电磁数据快速成像方法研究.docx'
+    import argparse
+    ap = argparse.ArgumentParser(description='论文MD转Word（期刊规范版）')
+    ap.add_argument('md_file', nargs='?', default='docs/paper_draft.md')
+    ap.add_argument('docx_file', nargs='?', default=None)
+    ap.add_argument('--figures-dir', default='figures')
+    args = ap.parse_args()
+
+    md_file = args.md_file
+    figures_dir = args.figures_dir
+    docx_file = args.docx_file or os.path.splitext(md_file)[0] + '.docx'
     
     print("=" * 60)
     print("论文Markdown转Word（期刊规范版）")
