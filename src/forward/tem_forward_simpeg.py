@@ -61,10 +61,13 @@ class TEMForwardSimPEG:
                                thicknesses: List[float]) -> np.ndarray:
         return self.step_dbdt(conductivities, thicknesses)
 
-    def add_noise(self, data: np.ndarray, snr: float = 10.0) -> np.ndarray:
+    def add_noise(self, data: np.ndarray, snr: float = 10.0,
+                  rng=None) -> np.ndarray:
+        """按 SNR(dB) 加高斯噪声。rng 传入 np.random.Generator 可复现。"""
         sp = np.mean(data ** 2)
         npow = sp / (10 ** (snr / 10))
-        return data + np.random.normal(0, np.sqrt(npow), data.shape)
+        rng = np.random if rng is None else rng
+        return data + rng.normal(0, np.sqrt(npow), data.shape)
 
     # ---------- 验证 ----------
     def halfspace_dbdt_analytic(self, sigma: float) -> np.ndarray:
