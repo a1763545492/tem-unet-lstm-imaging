@@ -17,7 +17,7 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.forward.tem_forward import TEMForward
+from src.forward.tem_forward_simpeg import TEMForwardSimPEG as TEMForward
 from src.models.attention_lstm import UNetAttentionLSTM
 from src.inference import predict_with_uncertainty
 from src.visualization.figure_manager import FigureManager
@@ -27,24 +27,35 @@ plt.rcParams['axes.unicode_minus'] = False
 
 
 def make_profile(time_gates, n_stations=50, seed=7):
-    """含采空区低阻（高导）异常体的演示剖面"""
+    """含采空区低阻（高导）异常体的演示剖面
+
+    与训练协议严格一致：30 网格阶梯剖面正演 + 全局 log 归一化
+    （models/norm_params.json），否则模型输入分布漂移、不确定性失真。
+    """
+    import json
+    with open('models/norm_params.json', 'r', encoding='utf-8') as f:
+        prm = json.load(f)
+    mu_g, sd_g = prm['mu'], prm['sd']
+    max_depth, nz = 300.0, 30
     rng = np.random.default_rng(seed)
     fwd = TEMForward(time_gates)
-    X, MU, SD = [], [], []
+    grid_thicks = np.r_[np.full(nz - 1, max_depth / nz), 0.0].tolist()
+    X = []
     for i in range(n_stations):
-        x = i * 20.0
-        if 400 <= x <= 600:
-            conds, ths = [0.01, 0.1, 0.02], [80, 60, 0.0]
+        if 400 <= i * 20.0 <= 600:
+            conds = [0.05, 0.02, 0.05]   # 浅部高导异常（早期道高信噪、可分辨）
         else:
-            conds, ths = [0.01, 0.02, 0.05], [80, 60, 0.0]
+            conds = [0.01, 0.02, 0.05]
+        ths = [80, 60, 0.0]
+        b = np.cumsum(ths)[:2]
+        d = np.arange(nz) * (max_depth / nz)
+        prof = np.where(d < b[0], conds[0],
+                        np.where(d < b[1], conds[1], conds[2]))
         with np.errstate(all='ignore'):
-            r = fwd.layered_earth_response(conds, ths)
+            r = fwd.layered_earth_response(prof.tolist(), grid_thicks)
             r = fwd.add_noise(r, snr=float(rng.uniform(18, 25)))
         r = np.nan_to_num(r, nan=0.0, posinf=0.0, neginf=0.0)
-        mu, sd = r.mean(), r.std()
-        X.append((r - mu) / (sd + 1e-12))
-        MU.append(mu)
-        SD.append(sd)
+        X.append((np.log10(np.maximum(r, 1e-30)) - mu_g) / (sd_g + 1e-12))
     return np.array(X, dtype=np.float32)
 
 
@@ -84,7 +95,7 @@ def main():
     axes[1].invert_yaxis()
     axes[1].set_xlabel('距离 / m')
     axes[1].set_ylabel('深度 / m')
-    axes[1].set_title('反演不确定性（log₁₀σ 标准差，越大可信度越低）')
+    axes[1].set_title('反演不确定性（log10σ 标准差，越大可信度越低）')
     fig.colorbar(im1, ax=axes[1], label='标准差')
     fig.tight_layout()
 

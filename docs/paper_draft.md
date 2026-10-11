@@ -17,13 +17,18 @@
 ## 1 引言
 
 ### 1.1 研究背景与意义
-- TEM 在采空区、水文地质与工程勘察中的应用需求（呼应项目背景）。
-- 传统一维反演（OCCAM-1D、Bostick 等）的问题：非线性强、多解性、初值依赖、计算效率与可靠度信息缺失。
 
-### 1.2 国内外研究现状（文献综述占位）
-- 数据驱动深度学习反演：端到端映射的进展与局限（泛化、物理一致性）。
-- 物理约束/物理信息神经网络（PINN 思路）在地球物理中的尝试。
-- 深度学习反演的不确定性量化：贝叶斯神经网络、深度集成、MC Dropout。
+瞬变电磁法（Transient Electromagnetic Method, TEM）以不接地回线向地下发射一次性电磁脉冲，在断电间歇观测地下感应二次场的衰减过程，具有对低阻体灵敏、分辨率高、施工效率高等优点，已广泛用于煤矿采空区与富水性探测、水文地质勘查及工程勘察等领域（Nabighian & Macnae, 1988[待核对]）。受矿产开采与城市地下空间开发驱动，探测对象日益呈现"低阻、局部、埋深浅"的特征，对解释方法的纵横向分辨率与结果可信度提出了更高要求。
+
+TEM 响应与地下电性分布之间呈强非线性关系，经典一维反演方法各有局限：Bostick 换算快速但分辨率低；OCCAM-1D 以最大光滑约束求解稳定，但依赖正则化参数选取、对陡变界面存在系统性平滑（Constable et al., 1987[待核对]），且深部分辨率不足时会出现电导率系统性偏低（本文合成钻孔验证中深部偏差达 −0.66 log10σ）。更为共性的问题是，传统反演不提供结果可靠度的直接度量，解释人员难以判断何时可以采信反演剖面。因此，发展既保持物理一致性、又能量化自身不确定性的快速反演方法，具有明确的科学意义与应用价值。
+
+### 1.2 国内外研究现状
+
+**（1）数据驱动的深度学习电磁反演。** 近年来，以卷积神经网络为代表的端到端映射方法被引入电磁反演：网络在大规模正演样本上学习"响应→电性结构"的直接映射，推理耗时毫秒级，可规避迭代反演的初值依赖与局部极小问题（Moghadas, 2020[待核对]；Puzyrev, 2019[待核对]）。国内学者亦在瞬变电磁智能反演方向开展了系列工作（国内文献[待补充核对]）。但纯数据驱动方法存在两点质疑：其一，网络输出未必满足电磁场方程，可能学到"物理上不自洽"的映射；其二，预测无可靠度信息，制约工程采信。
+
+**（2）物理约束的深度学习反演。** 物理信息神经网络（PINN）思想（Raissi et al., 2019[待核对]）启发了一系列在损失函数中嵌入物理约束的地学深度学习方法。对 TEM 而言，常见做法是在训练损失中加入可微正演项，约束预测模型的正演响应逼近实测响应。已有工作的可微正演多为启发式近似（如误差函数叠加近似），与真实数字滤波正演存在系统性偏差——本文实验表明这种"物理约束不自洽"会引入 10%–33% 的错误约束（详见 2.3 节），使物理项反而劣化反演。本文以与 SimPEG（Cockett et al., 2015[待核对]）严格一致的可微正演算子解决该问题。
+
+**（3）反演不确定性量化。** 贝叶斯方法（如 MCMC 采样）可给出后验分布但计算昂贵；深度学习框架下的替代方案包括深度集成（Lakshminarayanan et al., 2017[待核对]）、变分贝叶斯与 MC Dropout（Gal & Ghahramani, 2016[待核对]）。MC Dropout 以推理期保持 Dropout 激活的方式近似贝叶斯后验，实现成本低、与任意 Dropout 网络兼容，但已知其方差往往低估真实误差且缺乏测量噪声（aleatoric）项（Kendall & Gal, 2017[待核对]）。本文在合成钻孔验证框架下对 MC Dropout 置信区间进行了定量标定检验（覆盖率-可靠性曲线），据我们所知，在 TEM 智能反演领域此类标定检验尚少见报道。
 
 ### 1.3 本文工作与创新点
 - **创新点 A（物理约束损失）**：以与数据生成严格同源的可微正演（复用 SimPEG DLF 系数的纯 PyTorch 算子）构造响应一致性损失，杜绝"启发式可微正演与真实物理不一致"引入的错误约束；对数幅值空间度量 + 自适应权重 + 稀疏子采样策略保证训练可行。
@@ -55,8 +60,10 @@ L = L_data + w2 · L_physics + w3 · L_smooth
 - 一致性红线（审稿人关注点）：数据生成、标签、物理算子三者必须同源同离散——正文说明"连续界面三层模型正演 vs 30 网格阶梯标签"会引入 10%–33% 系统偏差，本文统一采用 30 网格阶梯协议。
 
 ### 2.4 MC Dropout 不确定性量化（创新点 B）
-- 推理阶段保持 Dropout 激活，T=30~50 次随机前向，取均值/逐节点标准差。
-- 图：`fig_uncertainty.png`（均值断面 + 置信度图；异常体边界区不确定性高于背景区）。
+- 推理阶段保持 Dropout 激活，T=50 次随机前向，取均值/逐节点标准差。
+- 图：`fig_uncertainty_v20261011223317.png`（均值断面 + 置信度图；旧版 `fig_uncertainty.png` 基于过期协议，仅存档）。
+- 演示剖面（50 测点，400–600 m 段为浅部高导异常，第 1 层电导率 5 倍异常）：异常清晰恢复——异常区第 1 层反演 log10σ = −1.34（真值 −1.30），背景 −1.89（真值 −2.00）。
+- std 语义的诚实表述：MC Dropout 标准差刻画的是模型预测分散度（认知不确定性近似），本文实测其与真实误差的相关性有限（弱特征背景区 std 反而更大：0.037 vs 异常区 0.020），故章节 3.4 进一步以标定检验定量评估其置信区间有效性。
 
 ### 2.5 数据生成协议
 - 时间道 np.logspace(−6, −2, 30)；最大探测深度 300 m，30 网格（dz=10 m）；回线半径 10 m，1 A。
@@ -105,8 +112,17 @@ L = L_data + w2 · L_physics + w3 · L_smooth
 - 区间标定：MC Dropout 原生 90% 区间实测覆盖率仅 7.3%（严重欠覆盖）；线性方差标定（s=7.23）后提升至 44.7%，仍未达理想——说明 dropout 方差与真实误差相关性有限（仅认知不确定性、不含测量噪声）。讨论改进方向：深度集成、异方差输出头、conformal prediction。
 - 结论表述建议：钻孔验证章节以"界面与分层一致性"为主要证据，区间标定作为诚实的局限性讨论。
 
-### 3.5 计算效率
-图：`fig8_efficiency_comparison.png`（内容待与生成脚本核对后填数：单孔推理 ms 级 vs OCCAM 秒级）。
+### 3.5 计算效率（实测，CPU 4 线程，单测点）
+
+| 方法 | 单测点耗时 | 说明 |
+|---|---|---|
+| Bostick 换算 | 0.24 ms | 无迭代，分辨率低 |
+| OCCAM-1D（12 层，max_iter=4） | 10 ms | 本项目实现 |
+| 本文模型单次前向 | **1.93 ms** | 较 OCCAM 快约 5 倍 |
+| 本文模型 + MC Dropout（T=50） | 112 ms | 附加不确定性量化的代价，仍可接受 |
+
+> ⚠ 图件核对结论：`fig8_efficiency_comparison.png` 中的示意耗时（如 OCCAM 45 s）为早期占位数据，与实测不符，且"钻孔吻合度"一列无实测依据。该图属核心图件（暂不覆盖），**终稿前需按本表实测数据重绘**（需作者确认后执行）。
+> 演示剖面规模换算：50 测点全断面单次反演约 0.1 s（批量），MC 50 次约 5.6 s——满足剖面级快速解释需求。
 
 ---
 
@@ -156,19 +172,35 @@ python scripts/borehole_validation.py --holes 100 --passes 30
 | fig5 | 域自适应 | 4.1 |
 | fig6 | 反演断面对比 | 3.1 |
 | fig7 | 地形校正 | 4.1 |
-| fig8 | 效率对比 | 3.5 |
+| fig8 | 效率对比 | 3.5 ⚠ 示意数据失实，需按实测重绘 |
 | fig9 | Grad-CAM 可解释性 | 2.2/讨论 |
 | fig10 | 三维电阻率体渲染 | 4.2 展望 |
 | fig_noise_robustness | RMSE-SNR 曲线 | 3.1 |
-| fig_uncertainty | MC Dropout 均值断面+置信度 | 2.4 |
+| fig_uncertainty | MC Dropout 均值断面+置信度 | 2.4（新版 fig_uncertainty_v20261011223317.png；旧版仅存档） |
 | fig_borehole_validation | 钻孔验证三联图 | 3.4 |
 
-> 注：fig1~fig10 为论文核心图件（FigureManager 已注册保护，禁止覆盖）；fig_noise_robustness / fig_uncertainty 基于旧协议生成，正文引用前需按当前协议重生成（uncertainty_demo.py 归一化协议待同步）。
+> 注：fig1~fig10 为论文核心图件（FigureManager 已注册保护，禁止覆盖）；fig_noise_robustness 已按当前协议重生成；fig_uncertainty 新版 fig_uncertainty_v20261011223317.png 已按当前协议重生成（旧版仅存档）；fig8 数据失实待重绘。
+
+## 附录 C：暂定参考文献（均需逐条核实后再引用）
+
+1. Nabighian M N, Macnae J C. Time domain electromagnetic prospecting methods // Nabighian M N (ed.). Electromagnetic Methods in Applied Geophysics, Vol. 1. Tulsa: SEG, 1988. [待核对卷页]
+2. Ward S H, Hohmann G W. Electromagnetic theory for geophysical applications // 同上. [待核对]
+3. Constable S C, Parker R L, Constable C G. Occam's inversion: A practical algorithm for generating smooth models from electromagnetic sounding data. Geophysics, 1987, 52(3): 289–300. [待核对]
+4. Cockett R, Kang S, Heagy L J, et al. SimPEG: An open source framework for simulation and gradient based parameter estimation in geophysical applications. Computers & Geosciences, 2015, 85: 142–154. [待核对]
+5. Raissi M, Perdikaris P, Karniadakis G E. Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations. Journal of Computational Physics, 2019, 378: 686–707. [待核对]
+6. Gal Y, Ghahramani Z. Dropout as a Bayesian approximation: Representing model uncertainty in deep learning. ICML, 2016. [待核对]
+7. Kendall A, Gal Y. What uncertainties do we need in Bayesian deep learning for computer vision? NeurIPS, 2017. [待核对]
+8. Lakshminarayanan B, Pritzel A, Blundell C. Simple and scalable predictive uncertainty estimation using deep ensembles. NeurIPS, 2017. [待核对]
+9. Moghadas D. One-dimensional deep learning inversion of transient electromagnetic data. Geophysics, 2020. [待核对卷页]
+10. Puzyrev V. Deep learning electromagnetic inversion and uncertainty quantification // 见相关综述. 2019. [待核对确切出处]
+11. 国内瞬变电磁智能反演代表文献 2–3 篇. [待补充]
+12. Angelopoulos A N, Bates S. A gentle introduction to conformal prediction and distribution-free uncertainty quantification. 2021. [待核对]（讨论章节改进路线引用）
 
 ## 待办清单（写作推进）
 
-- [ ] 文献综述与引言成文（现状部分）
-- [ ] 公式排版（LaTeX/Word 模板确定后）
-- [ ] uncertainty_demo.py 同步新协议后重生成 fig_uncertainty
-- [ ] fig8 效率数据核对与填表
+- [x] 文献综述与引言成文（1.1/1.2，文献条目已标注[待核对]，需逐条人工核实）
+- [ ] 参考文献列表规范化（GB/T 7714 或目标期刊格式）并核实
+- [x] uncertainty_demo.py 同步新协议后重生成 fig_uncertainty（演示模型改为浅部高导异常）
+- [x] fig8 效率数据核对与填表（实测完成；图件重绘待作者确认）
+- [ ] 摘要与结论定稿（方法章公式排版后）
 - [ ] 真实钻孔/野外数据章节（资料到位后）
