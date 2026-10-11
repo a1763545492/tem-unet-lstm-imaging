@@ -222,6 +222,7 @@ python scripts/borehole_validation.py --holes 100 --passes 30
 [3] Moghadas D. 2020. One-dimensional deep learning inversion of electromagnetic induction data using convolutional neural network. Geophysical Journal International, 222(1): 247–259, doi: 10.1093/gji/ggaa161.
 [4] Puzyrev V. 2019. Deep learning electromagnetic inversion with convolutional neural networks. Geophysical Journal International, 218(2): 817–832, doi: 10.1093/gji/ggz204.
 [5] 范涛, 薛国强, 李萍, 等. 2022. 瞬变电磁长短时记忆网络深度学习实时反演方法. 地球物理学报, 65(9): 3650–3663, doi: 10.6038/cjg2022P0572.
+FAN T, XUE G Q, LI P, et al. 2022. TEM real-time inversion based on long-short term memory network. Chinese Journal of Geophysics (in Chinese), 65(9): 3650–3663, doi: 10.6038/cjg2022P0572.
 [6] Wu X, Xue G, Zhao Y, et al. 2022. A deep learning estimation of the earth resistivity model for the airborne transient electromagnetic observation. Journal of Geophysical Research: Solid Earth, 127(3): e2021JB023185, doi: 10.1029/2021JB023185.
 [7] Raissi M, Perdikaris P, Karniadakis G E. 2019. Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations. Journal of Computational Physics, 378: 686–707, doi: 10.1016/j.jcp.2018.10.045.
 [8] Cockett R, Kang S, Heagy L J, et al. 2015. SimPEG: An open source framework for simulation and gradient based parameter estimation in geophysical applications. Computers & Geosciences, 85: 142–154, doi: 10.1016/j.cageo.2015.06.012.
