@@ -132,19 +132,19 @@ def format_docx_journal_style(docx_file, figures_dir):
     run.element.rPr.rFonts.set(qn('w:eastAsia'), '黑体')
     
     figure_captions = {
-        'fig1_network_structure.png': '图1  双分支反演网络总体结构（UNet1D + BiLSTM-自注意力）',
-        'fig2_attention_mechanism.png': '图2  多头自注意力机制示意图',
-        'fig3_tem_decay_curves.png': '图3  TEM衰减曲线与合成数据示例',
-        'fig4_training_loss.png': '图4  训练损失收敛曲线（A组纯MSE vs B组物理约束）',
-        'fig5_domain_adaptation.png': '图5  域自适应效果对比',
-        'fig6_inversion_comparison.png': '图6  反演断面对比',
-        'fig7_terrain_correction.png': '图7  地形校正效果对比',
-        'fig8_efficiency_comparison_v20261011225127.png': '图8  计算效率与不确定性量化开销（实测）',
-        'fig9_gradcam_interpretability.png': '图9  Grad-CAM可解释性分析',
-        'fig10_3d_resistivity_volume.png': '图10  三维电阻率体渲染',
-        'fig_noise_robustness.png': '图11  抗噪性能对比（RMSE-SNR，NN vs OCCAM-1D）',
-        'fig_uncertainty.png': '图12  MC Dropout不确定性断面（均值+逐节点标准差，2026-10-11新协议版）',
-        'fig_borehole_validation.png': '图13  合成钻孔验证三联图（界面误差/分层一致性/区间标定）',
+        'fig1_network_structure.png': '图1  双分支反演网络总体结构（UNet1D + BiLSTM-自注意力）\nFig. 1  Overall architecture of the dual-branch inversion network (UNet1D + BiLSTM self-attention)',
+        'fig2_attention_mechanism.png': '图2  多头自注意力机制示意图\nFig. 2  Schematic of the multi-head self-attention mechanism',
+        'fig3_tem_decay_curves.png': '图3  TEM衰减曲线与合成数据示例\nFig. 3  TEM decay curves and synthetic data examples',
+        'fig4_training_loss.png': '图4  训练损失收敛曲线（A组纯MSE vs B组物理约束）\nFig. 4  Training-loss convergence (Group A pure-MSE vs Group B physics-constrained)',
+        'fig5_domain_adaptation.png': '图5  域自适应效果对比\nFig. 5  Comparison of domain adaptation results',
+        'fig6_inversion_comparison.png': '图6  反演断面对比\nFig. 6  Comparison of inversion sections',
+        'fig7_terrain_correction.png': '图7  地形校正效果对比\nFig. 7  Comparison of terrain correction results',
+        'fig8_efficiency_comparison_v20261011225127.png': '图8  计算效率与不确定性量化开销（实测）\nFig. 8  Computational efficiency and uncertainty-quantification overhead (measured)',
+        'fig9_gradcam_interpretability.png': '图9  Grad-CAM可解释性分析\nFig. 9  Grad-CAM interpretability analysis',
+        'fig10_3d_resistivity_volume.png': '图10  三维电阻率体渲染\nFig. 10  3D resistivity volume rendering',
+        'fig_noise_robustness.png': '图11  抗噪性能对比（RMSE-SNR，NN vs OCCAM-1D）\nFig. 11  Noise robustness comparison (RMSE vs SNR, NN vs OCCAM-1D)',
+        'fig_uncertainty.png': '图12  MC Dropout不确定性断面（均值+逐节点标准差，2026-10-11新协议版）\nFig. 12  MC Dropout uncertainty section (mean and per-node std, new-protocol version)',
+        'fig_borehole_validation.png': '图13  合成钻孔验证三联图（界面误差/分层一致性/区间标定）\nFig. 13  Synthetic-borehole validation (interface error, per-layer consistency, interval calibration)',
     }
 
     # 只嵌入白名单图件（排除历史存档与报告图）
@@ -167,10 +167,14 @@ def format_docx_journal_style(docx_file, figures_dir):
             cap_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             cap_p.paragraph_format.first_line_indent = None
             cap_p.paragraph_format.space_after = Pt(12)
-            cap_run = cap_p.add_run(caption)
+            cap_parts = caption.split('\n')
+            cap_run = cap_p.add_run(cap_parts[0])
             cap_run.font.name = 'Times New Roman'
             cap_run.font.size = Pt(10)
             cap_run.bold = True
+            for _extra in cap_parts[1:]:
+                cap_run.add_break()
+                cap_run.add_text(_extra)
             cap_run.element.rPr.rFonts.set(qn('w:eastAsia'), '黑体')
     
     doc.save(docx_file)
