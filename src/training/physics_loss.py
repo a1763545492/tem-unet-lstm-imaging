@@ -5,54 +5,21 @@
 重算响应，与实测（输入）响应比较，形成正演一致性约束：
     L = λ1·L_data + λ2·L_physics + λ3·L_smooth
 - L_data   : MSE(预测模型, 标签模型)
-- L_physics: MSE(F(预测电导率), 输入响应)，F 为 TEMForward 的 torch 可微复现
+- L_physics: MSE(log10(F(预测电导率)), log10(输入响应))，F 为严格 1D TEM
+             正演（Hankel DLF + 余弦变换），由外部注入 forward_op
+             （src/forward/tem_forward_torch.py 的 TorchDLFTEMForward，
+             与 SimPEG 数字滤波正演数值一致，误差 <1e-7）
 - L_smooth : 电导率剖面一阶差分平滑正则（稳定解、抑制跳变噪声）
 
-可微性：网络输出经 softplus 保证电导率为正；erf/exp/sqrt 均为 torch
-原生可微算子，梯度可穿透正演算子回传至网络 —— 实现真正的物理引导训练。
+可微性：网络输出（log10σ）经 10**x 保正还原，梯度可穿透 DLF 正演算子
+回传至网络 —— 实现真正的物理引导训练。
 
-数值保护：sqrt(x+eps)、响应幅值在样本内归一化（与输入预处理一致）。
+数值保护：物理项在对数幅值空间度量（响应跨数量级，线性 MSE 不稳定）；
+严格 DLF 反向传播开销大，每 batch 仅子采样 physics_batch 个样本参与。
 """
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-
-class DifferentiableTEMForward(nn.Module):
-    """TEMForward.layered_earth_response 的 PyTorch 可微批量化复现。
-
-    将网络输出的 L 节点电导率剖面视为 L 个固定层厚 dz 的地层，
-    各层对响应的贡献为 Δσ_i · layer_resp(σ_i, dz)，Δσ 相对最深节点。
-    """
-
-    def __init__(self, time_gates: np.ndarray, layer_thickness: float = 10.0):
-        super().__init__()
-        self.register_buffer('time_gates',
-                             torch.tensor(time_gates, dtype=torch.float32))
-        self.mu0 = 4 * np.pi * 1e-7
-        self.dz = float(layer_thickness)
-
-    def layer_response(self, sigma: torch.Tensor,
-                       thickness: float) -> torch.Tensor:
-        """sigma: (B, L) → response: (B, L, T)"""
-        t = self.time_gates  # (T,)
-        tau = self.mu0 * sigma.unsqueeze(-1) * t / 4.0          # (B,L,T)
-        sqrt_tau = torch.sqrt(tau + 1e-30)
-        erf_val = torch.special.erf(sqrt_tau)
-        resp = (2.0 / np.sqrt(np.pi)) * torch.exp(-tau) / sqrt_tau - erf_val
-        if thickness > 0:
-            k = torch.sqrt(self.mu0 * sigma.unsqueeze(-1) / (4.0 * t) + 1e-30)
-            depth_factor = torch.exp(-2.0 * k * thickness)
-            resp = resp * (1.0 - depth_factor)
-        return resp
-
-    def forward(self, sigma_profile: torch.Tensor) -> torch.Tensor:
-        """sigma_profile: (B, L) 电导率(S/m) → 响应 (B, T)（幅值非负）"""
-        sigma_base = sigma_profile[:, -1:]                       # (B,1)
-        delta = sigma_profile - sigma_base                       # (B,L)
-        resp_layers = self.layer_response(sigma_profile, self.dz)  # (B,L,T)
-        return torch.abs(torch.sum(delta.unsqueeze(-1) * resp_layers, dim=1))
 
 
 class PhysicsInformedLoss(nn.Module):
