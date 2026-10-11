@@ -18,17 +18,17 @@
 
 ### 1.1 研究背景与意义
 
-瞬变电磁法（Transient Electromagnetic Method, TEM）以不接地回线向地下发射一次性电磁脉冲，在断电间歇观测地下感应二次场的衰减过程，具有对低阻体灵敏、分辨率高、施工效率高等优点，已广泛用于煤矿采空区与富水性探测、水文地质勘查及工程勘察等领域（Nabighian & Macnae, 1988[待核对]）。受矿产开采与城市地下空间开发驱动，探测对象日益呈现"低阻、局部、埋深浅"的特征，对解释方法的纵横向分辨率与结果可信度提出了更高要求。
+瞬变电磁法（Transient Electromagnetic Method, TEM）以不接地回线向地下发射一次性电磁脉冲，在断电间歇观测地下感应二次场的衰减过程，具有对低阻体灵敏、分辨率高、施工效率高等优点，已广泛用于煤矿采空区与富水性探测、水文地质勘查及工程勘察等领域（Nabighian & Macnae, 1988）。受矿产开采与城市地下空间开发驱动，探测对象日益呈现"低阻、局部、埋深浅"的特征，对解释方法的纵横向分辨率与结果可信度提出了更高要求。
 
-TEM 响应与地下电性分布之间呈强非线性关系，经典一维反演方法各有局限：Bostick 换算快速但分辨率低；OCCAM-1D 以最大光滑约束求解稳定，但依赖正则化参数选取、对陡变界面存在系统性平滑（Constable et al., 1987[待核对]），且深部分辨率不足时会出现电导率系统性偏低（本文合成钻孔验证中深部偏差达 −0.66 log10σ）。更为共性的问题是，传统反演不提供结果可靠度的直接度量，解释人员难以判断何时可以采信反演剖面。因此，发展既保持物理一致性、又能量化自身不确定性的快速反演方法，具有明确的科学意义与应用价值。
+TEM 响应与地下电性分布之间呈强非线性关系，经典一维反演方法各有局限：Bostick 换算快速但分辨率低；OCCAM-1D 以最大光滑约束求解稳定，但依赖正则化参数选取、对陡变界面存在系统性平滑（Constable et al., 1987），且深部分辨率不足时会出现电导率系统性偏低（本文合成钻孔验证中深部偏差达 −0.66 log10σ）。更为共性的问题是，传统反演不提供结果可靠度的直接度量，解释人员难以判断何时可以采信反演剖面。因此，发展既保持物理一致性、又能量化自身不确定性的快速反演方法，具有明确的科学意义与应用价值。
 
 ### 1.2 国内外研究现状
 
-**（1）数据驱动的深度学习电磁反演。** 近年来，以卷积神经网络为代表的端到端映射方法被引入电磁反演：网络在大规模正演样本上学习"响应→电性结构"的直接映射，推理耗时毫秒级，可规避迭代反演的初值依赖与局部极小问题（Moghadas, 2020[待核对]；Puzyrev, 2019[待核对]）。国内学者亦在瞬变电磁智能反演方向开展了系列工作（国内文献[待补充核对]）。但纯数据驱动方法存在两点质疑：其一，网络输出未必满足电磁场方程，可能学到"物理上不自洽"的映射；其二，预测无可靠度信息，制约工程采信。
+**（1）数据驱动的深度学习电磁反演。** 近年来，以卷积神经网络为代表的端到端映射方法被引入电磁反演：网络在大规模正演样本上学习"响应→电性结构"的直接映射，推理耗时毫秒级，可规避迭代反演的初值依赖与局部极小问题（Moghadas, 2020[待核对]；Puzyrev, 2019）。国内学者亦在瞬变电磁智能反演方向开展了系列工作（范涛等, 2022；Wu et al., 2022）。但纯数据驱动方法存在两点质疑：其一，网络输出未必满足电磁场方程，可能学到"物理上不自洽"的映射；其二，预测无可靠度信息，制约工程采信。
 
-**（2）物理约束的深度学习反演。** 物理信息神经网络（PINN）思想（Raissi et al., 2019[待核对]）启发了一系列在损失函数中嵌入物理约束的地学深度学习方法。对 TEM 而言，常见做法是在训练损失中加入可微正演项，约束预测模型的正演响应逼近实测响应。已有工作的可微正演多为启发式近似（如误差函数叠加近似），与真实数字滤波正演存在系统性偏差——本文实验表明这种"物理约束不自洽"会引入 10%–33% 的错误约束（详见 2.3 节），使物理项反而劣化反演。本文以与 SimPEG（Cockett et al., 2015[待核对]）严格一致的可微正演算子解决该问题。
+**（2）物理约束的深度学习反演。** 物理信息神经网络（PINN）思想（Raissi et al., 2019）启发了一系列在损失函数中嵌入物理约束的地学深度学习方法。对 TEM 而言，常见做法是在训练损失中加入可微正演项，约束预测模型的正演响应逼近实测响应。已有工作的可微正演多为启发式近似（如误差函数叠加近似），与真实数字滤波正演存在系统性偏差——本文实验表明这种"物理约束不自洽"会引入 10%–33% 的错误约束（详见 2.3 节），使物理项反而劣化反演。本文以与 SimPEG（Cockett et al., 2015）严格一致的可微正演算子解决该问题。
 
-**（3）反演不确定性量化。** 贝叶斯方法（如 MCMC 采样）可给出后验分布但计算昂贵；深度学习框架下的替代方案包括深度集成（Lakshminarayanan et al., 2017[待核对]）、变分贝叶斯与 MC Dropout（Gal & Ghahramani, 2016[待核对]）。MC Dropout 以推理期保持 Dropout 激活的方式近似贝叶斯后验，实现成本低、与任意 Dropout 网络兼容，但已知其方差往往低估真实误差且缺乏测量噪声（aleatoric）项（Kendall & Gal, 2017[待核对]）。本文在合成钻孔验证框架下对 MC Dropout 置信区间进行了定量标定检验（覆盖率-可靠性曲线），据我们所知，在 TEM 智能反演领域此类标定检验尚少见报道。
+**（3）反演不确定性量化。** 贝叶斯方法（如 MCMC 采样）可给出后验分布但计算昂贵；深度学习框架下的替代方案包括深度集成（Lakshminarayanan et al., 2017）、变分贝叶斯与 MC Dropout（Gal & Ghahramani, 2016）。MC Dropout 以推理期保持 Dropout 激活的方式近似贝叶斯后验，实现成本低、与任意 Dropout 网络兼容，但已知其方差往往低估真实误差且缺乏测量噪声（aleatoric）项（Kendall & Gal, 2017）。本文在合成钻孔验证框架下对 MC Dropout 置信区间进行了定量标定检验（覆盖率-可靠性曲线），据我们所知，在 TEM 智能反演领域此类标定检验尚少见报道。
 
 ### 1.3 本文工作与创新点
 - **创新点 A（物理约束损失）**：以与数据生成严格同源的可微正演（复用 SimPEG DLF 系数的纯 PyTorch 算子）构造响应一致性损失，杜绝"启发式可微正演与真实物理不一致"引入的错误约束；对数幅值空间度量 + 自适应权重 + 稀疏子采样策略保证训练可行。
@@ -155,7 +155,7 @@ $$L_{\mathrm{phys}} = \mathrm{MSE}\!\left(\log_{10}\!\left(F(10^{\hat{\sigma}}) 
 
 **一维假设的适用边界**。本文方法假设电性结构横向缓变，适用于测点级一维解释；对陡倾接触带与三维局部体，一维反演会产生横向归位偏差。将测线断面作为整体输入的二维批量反演与三维体成像（fig10）为后续扩展路径，双分支网络的时间建模能力可直接复用。
 
-**不确定性量化的改进空间**。3.4 节表明 MC Dropout 原生置信区间严重欠覆盖且方差-误差相关性有限，线性标定只能部分修正。更彻底的路线包括：深度集成（训练多个独立网络取预测分布）、异方差输出头（同时预测均值与逐节点方差，将测量噪声显式纳入）、以及无需分布假设的 conformal prediction（Angelopoulos & Bates, 2021[待核对]）。合成钻孔验证框架（界面/分层/覆盖率三口径）可直接用于评价上述方法的相对收益。
+**不确定性量化的改进空间**。3.4 节表明 MC Dropout 原生置信区间严重欠覆盖且方差-误差相关性有限，线性标定只能部分修正。更彻底的路线包括：深度集成（训练多个独立网络取预测分布）、异方差输出头（同时预测均值与逐节点方差，将测量噪声显式纳入）、以及无需分布假设的 conformal prediction（Angelopoulos & Bates, 2021）。合成钻孔验证框架（界面/分层/覆盖率三口径）可直接用于评价上述方法的相对收益。
 
 **真实钻孔验证**。本文的虚拟钻孔协议（界面深度误差、分层电导率偏差、区间覆盖率）已固化为标准统计口径，待野外钻孔资料获取后，可直接以同一口径开展实测验证。
 
@@ -209,25 +209,26 @@ python scripts/borehole_validation.py --holes 100 --passes 30
 
 > 注：fig1~fig10 为论文核心图件（FigureManager 已注册保护）；fig8 已按实测重绘为版本化新文件；fig_noise_robustness 与 fig_uncertainty 均已按当前协议重生成。
 
-## 附录 C：暂定参考文献（均需逐条核实后再引用）
+## 附录 C：参考文献（2026-10-11 联网核实，GB/T 7714 格式）
 
-1. Nabighian M N, Macnae J C. Time domain electromagnetic prospecting methods // Nabighian M N (ed.). Electromagnetic Methods in Applied Geophysics, Vol. 1. Tulsa: SEG, 1988. [待核对卷页]
-2. Ward S H, Hohmann G W. Electromagnetic theory for geophysical applications // 同上. [待核对]
-3. Constable S C, Parker R L, Constable C G. Occam's inversion: A practical algorithm for generating smooth models from electromagnetic sounding data. Geophysics, 1987, 52(3): 289–300. [待核对]
-4. Cockett R, Kang S, Heagy L J, et al. SimPEG: An open source framework for simulation and gradient based parameter estimation in geophysical applications. Computers & Geosciences, 2015, 85: 142–154. [待核对]
-5. Raissi M, Perdikaris P, Karniadakis G E. Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations. Journal of Computational Physics, 2019, 378: 686–707. [待核对]
-6. Gal Y, Ghahramani Z. Dropout as a Bayesian approximation: Representing model uncertainty in deep learning. ICML, 2016. [待核对]
-7. Kendall A, Gal Y. What uncertainties do we need in Bayesian deep learning for computer vision? NeurIPS, 2017. [待核对]
-8. Lakshminarayanan B, Pritzel A, Blundell C. Simple and scalable predictive uncertainty estimation using deep ensembles. NeurIPS, 2017. [待核对]
-9. Moghadas D. One-dimensional deep learning inversion of transient electromagnetic data. Geophysics, 2020. [待核对卷页]
-10. Puzyrev V. Deep learning electromagnetic inversion and uncertainty quantification // 见相关综述. 2019. [待核对确切出处]
-11. 国内瞬变电磁智能反演代表文献 2–3 篇. [待补充]
-12. Angelopoulos A N, Bates S. A gentle introduction to conformal prediction and distribution-free uncertainty quantification. 2021. [待核对]（讨论章节改进路线引用）
+1. Nabighian M N, Macnae J C. Time domain electromagnetic prospecting methods // Nabighian M N (ed.). Electromagnetic Methods in Applied Geophysics, Vol. 1: Theory. Tulsa: Society of Exploration Geophysicists, 1988: 427–520.
+2. Ward S H, Hohmann G W. Electromagnetic theory for geophysical applications // Nabighian M N (ed.). Electromagnetic Methods in Applied Geophysics, Vol. 1: Theory. Tulsa: Society of Exploration Geophysicists, 1988: 131–311.
+3. Constable S C, Parker R L, Constable C G. Occam's inversion: A practical algorithm for generating smooth models from electromagnetic sounding data. Geophysics, 1987, 52(3): 289–300.
+4. Cockett R, Kang S, Heagy L J, et al. SimPEG: An open source framework for simulation and gradient based parameter estimation in geophysical applications. Computers & Geosciences, 2015, 85: 142–154. DOI: 10.1016/j.cageo.2015.06.012.
+5. Raissi M, Perdikaris P, Karniadakis G E. Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations. Journal of Computational Physics, 2019, 378: 686–707. DOI: 10.1016/j.jcp.2018.10.045.
+6. Gal Y, Ghahramani Z. Dropout as a Bayesian approximation: Representing model uncertainty in deep learning // Proceedings of the 33rd International Conference on Machine Learning (ICML), PMLR 48, 2016: 1050–1059.
+7. Kendall A, Gal Y. What uncertainties do we need in Bayesian deep learning for computer vision? // Advances in Neural Information Processing Systems 30 (NeurIPS), 2017: 6370–6380.
+8. Lakshminarayanan B, Pritzel A, Blundell C. Simple and scalable predictive uncertainty estimation using deep ensembles // Advances in Neural Information Processing Systems 30 (NeurIPS), 2017: 6395–6405.
+9. Moghadas D. One-dimensional deep learning inversion of electromagnetic induction data using convolutional neural network. Geophysical Journal International, 2020, 222(1): 247–259. DOI: 10.1093/gji/ggaa161.（核实更正：原稿误记为 Geophysics 期刊、标题不同）
+10. Puzyrev V. Deep learning electromagnetic inversion with convolutional neural networks. Geophysical Journal International, 2019, 218(2): 817–832. DOI: 10.1093/gji/ggz204.（核实更正：原稿标题误含 "and uncertainty quantification"）
+11. 范涛, 薛国强, 李萍, 等. 瞬变电磁长短时记忆网络深度学习实时反演方法. 地球物理学报, 2022, 65(9): 3650–3663. DOI: 10.6038/cjg2022P0572.
+12. Wu X, Xue G, Zhao Y, et al. A deep learning estimation of the earth resistivity model for the airborne transient electromagnetic observation. Journal of Geophysical Research: Solid Earth, 2022, 127(3): e2021JB023185. DOI: 10.1029/2021JB023185.
+13. Angelopoulos A N, Bates S. Conformal prediction: A gentle introduction. Foundations and Trends in Machine Learning, 2023, 16(4): 494–591. DOI: 10.1561/2200000101.（初版 arXiv:2107.07511, 2021；讨论章节改进路线引用）
 
 ## 待办清单（写作推进）
 
-- [x] 文献综述与引言成文（1.1/1.2，文献条目已标注[待核对]，需逐条人工核实）
-- [ ] 参考文献列表规范化（GB/T 7714 或目标期刊格式）并核实
+- [x] 文献综述与引言成文（1.1/1.2）
+- [x] 参考文献逐条联网核实（2026-10-11，13 条，GB/T 7714 格式；两处更正见附录 C 条目 9/10 批注）
 - [x] uncertainty_demo.py 同步新协议后重生成 fig_uncertainty（演示模型改为浅部高导异常）
 - [x] fig8 效率数据核对与填表（实测完成，并已按实测重绘版本化新图）
 - [x] 方法章 2.1–2.3 成文（问题形式化/网络结构/物理约束损失，公式编号排版待迁移至目标模板）
