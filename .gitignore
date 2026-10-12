@@ -3,6 +3,7 @@
 *.docx
 论文_*.md
 best_model_*.pth
+docs/paper_draft.md
 
 # ===== 数据与模型（仅根目录，勿屏蔽 src/models 等源码目录）=====
 /data/
